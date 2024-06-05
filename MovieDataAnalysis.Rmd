@@ -1,0 +1,340 @@
+---
+title: "Project Draft 1"
+output: html_document
+date: "2023-04-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      error = TRUE, fig.height = 3)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+source("../../scripts/viridis.R")
+```
+
+**RITA VESELI, JERRY LUO, DHRUV ARORA**
+
+**Introduction**
+
+Everyone loves a good blockbuster movie. With the largest budgets and the biggest stars, we would think that these movies typically bring in the most revenue and garner the highest ratings. Our project aims to determine if this relationship truly exists. The dataset analyzed consists of movies from various genres and time periods and includes information on key factors such as budget, ratings, and revenue. This dataset presents a unique opportunity to explore the relationship between budget, ratings, and revenue in the context of the film industry. By examining these variables, we can gain insights into the impact of budget on movie ratings and revenue and explore potential trends or patterns that may emerge. 
+
+**Main Question of Interest**
+
+What factors affect movie scores and how do they relate or affect one another?
+
+**Background**
+
+The data set contains 6820 movies (220 movies per year, 1986-2016). For each observation, the dataset provides information about the budget, rating (PG, R), director, year, score (1-10), genre, runtime (min) etc. The dataset was collected from IMDb using web scraping techniques and published by Daniel Grijalva in 2021 on Kaggle, a platform for data science and machine learning competitions . 
+
+To better comprehend the dataset, it is important to note that the dataset only contains information on the top movies as voted by users of the IMDb website, which may not be representative of all movies and TV shows. In addition, the dataset only contains data up until 2017 and may not include more recent movies and TV shows. 
+
+Our goal for the rest of the report is to analyze whether movies with a higher budget receive higher scores than those with a lower budget and whether this relationship varies across different factors. These factors include the genre, director, star, etc. We will analyze the graph models and conduct various tests to conclude whether our results have any statistical significance. 
+
+**Analysis**
+
+```{r cars, include=FALSE}
+movies = read_csv("../../data/movies.csv")
+```
+
+First we wanted to see if there was any relationship between budget and gross revenue. To visualize this relationship, we generated a scatter plot with the budget on the x-axis and the revenue on the y-axis and added a line using geom smooth. For this analysis, we decided to keep all valid observations, which means that we only excluded "NA" observations or observations with a value of 0.
+
+```{r, include=FALSE}
+movies1 = movies %>% 
+  filter(budget != 0 & !is.na(gross))
+```
+
+```{r, echo = FALSE}
+
+ggplot(movies1, aes(x=budget,y=gross)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  ylab("Gross Revenue") +
+  xlab("Budget") +
+  ggtitle("Relationship Between Gross Revenue and Budget", subtitle="Films from 1980-1920")
+
+cor(x=movies1$budget, y=movies1$gross)
+
+```
+
+As calculated using the corr() function, the correlation between the chosen variables is relatively high. In addition, the graph demonstrates a strong positive relationship between budget and revenue.
+
+We decided that our constraint for a "successful movie" would be a rating above 7.5 (out of 10) and a ratio of gross revenue to budget of 1.5 (movies makes 1.5 times its budget). With this determined, we decided to find the average budget needed to create this successful movie.
+
+```{r, include=FALSE}
+
+movies2 = movies1 %>% 
+  filter(score > 7.5 & gross/budget >= 1.5)
+
+movies_sum = movies2 %>% 
+  summarize(n = n(),
+            mean = mean(budget),
+            sd = sd(budget))
+movies_sum
+```
+
+```{r, echo = FALSE}
+ggplot(movies2, aes(x = budget)) +
+  geom_density(fill = "lightpink", color = "black") +
+  geom_hline(yintercept = 0) +
+  scale_x_continuous(name="Budget (USD)", labels = scales::comma) +
+  ggtitle("Mean Budgets of Successful Movies 1980-2020",
+          subtitle = "Ratings > 7.5 and Revenue > 1.5 * Budget") +
+  theme_minimal()
+
+```
+
+We observed that the distribution is skewed to the right and not normally distributed, so we decided to use a simulation to find the sample distribution of the sample mean. 
+
+```{r, include=FALSE}
+
+B = 50000
+x = movies2 %>% pull(budget)
+
+sample_means = tibble(
+  xbar = map_dbl(1:B, ~{return( mean(sample(x, replace = TRUE)) )}))
+
+sim1_sum = sample_means %>% 
+  summarize(n_samples = n(),
+            n = length(x), 
+            mean = mean(xbar),
+            sd = sd(xbar))
+sim1_sum
+```
+
+```{r, echo = FALSE}
+ggplot(sample_means, aes(x = xbar)) +
+  geom_histogram(aes(y = after_stat(density)), binwidth = 1000000,
+                 fill = "cyan", color = "black") +
+  geom_density(fill = "lightpink", color = "black",
+                alpha=.5, linetype="dotted") +
+#  geom_norm_density(sim1_sum$mean, sim1_sum$sd)+
+  geom_hline(yintercept = 0) +
+  xlab("Budget Sample Means") +
+  ggtitle("1980-2020 Movies, Successful Films Only",
+          subtitle = "Sampling Distribution of the Sample Mean, n = 446") +
+  theme_minimal()
+
+```
+
+This normal distribution allows us to find a standard error so that we can use to build a 95% confidence interval for the mean budget for a successful movie. 
+
+```{r, echo=FALSE}
+
+z = qnorm(0.975)
+ci = movies_sum$mean + c(-1,1)*z*sim1_sum$sd
+round(ci,3)
+```
+
+> We are 95% confident that the mean budget of a successful movie making 1.5x its budget and having a rating of 7.5 or higher out of 10 is between $43,621,660 and $54,594,425.
+
+In the following graph, we analyzed the relationship between the budget and profit of movies from the years 1980 to 2020. We calculating the profit by subtracting the budget variable from the gross revenue variable. First we created a scatter plot with the budget plotted on the x-axis and the profit on the y-axis. Then we added a linear regression line to examine this relationship between the budget and profit of the movies.
+
+
+```{r, echo = FALSE}
+# Load data
+
+# Remove missing values
+movies44 = movies %>% 
+  filter(budget != 0 & !is.na(gross))
+
+# Create new variable for profit
+movies44 = movies44 %>% 
+  mutate(profit = gross - budget)
+
+# View scatterplot of budget vs. profit
+ggplot(movies44, aes(x = budget, y = profit)) +
+  geom_point() +
+  ylab("Profit (USD)") +
+  xlab("Budget (USD)") +
+  ggtitle("Movie Budget and Profit", subtitle = "1980-2020") +
+  geom_smooth(method = "lm")
+
+```
+
+```{r, include = FALSE}
+# Create linear regression model
+model = lm(profit ~ budget + genre + runtime + year, data = movies44)
+
+# View model summary
+summary(model)
+```
+
+```{r, echo = FALSE}
+cor(x=movies44$budget, y=movies44$profit)
+```
+
+Similar to the analysis we did earlier with budget and gross revenue, we plotted a linear regression model to examine the relationship between budget and profit. As seen on the graph, there is a moderately strong and positive relationship between movie budget and revenue, with the correlation being 0.611
+
+
+Next we wanted to find the effect of the chosen genre of the movie on those same factors we decided were important to a successful movie: score and profit.
+
+```{r, echo=FALSE}
+
+movies4 = movies1 %>% 
+  group_by(year, genre) %>% 
+  mutate(num=n()) %>% 
+  group_by(year) %>% 
+  slice_max(num, n=1) %>% 
+  summarize(year, genre) %>% 
+  distinct()
+
+
+ggplot(movies4, aes(x=genre)) +
+  geom_bar(color = "purple", fill = "lavender") +
+  xlab("Genre")+
+  ylab("Count")+
+  ggtitle("Most Popular Movie Genre of Each Year", subtitle="1980-2020")
+
+
+movies5 = movies1 %>% 
+  group_by(genre) %>% 
+  mutate(avgscore = mean(score), avgrevenue = mean(gross), avgbudget = mean(budget)) %>% 
+  summarize(avgscore, avgprofit = avgrevenue-avgbudget, genre) %>% 
+  distinct() 
+
+
+
+ggplot(movies5, aes(x=reorder(genre, avgscore), y=avgscore)) +
+  geom_col(color = "purple",fill = "lavender")+
+  xlab("Genre")+
+  ylab("Average Score (out of 10)")+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  ggtitle("Average Score by Genre")
+
+ggplot(movies5, aes(x=reorder(genre, avgprofit), y=avgprofit)) +
+  geom_col(color = "purple",fill = "lavender")+
+  xlab("Genre")+
+  scale_y_continuous(name="Average Profit (USD)", labels = scales::comma) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  ggtitle("Average Profit by Genre")
+
+```
+
+We can see that the scores are all about the same, with the genre "Biography" being slightly higher than the rest. However, when looking at the average profit by genre, family movies make a lot more profit as compared to western movies where on average they lose $487,057.
+
+From our runtime variable, we have classified movies that are shorter or equal to 120 minutes as short movies and movies that are longer than 120 minutes as long movies. We then generated a bar graph showing the frequency of action vs. comedy movies based on the runtime. (i.e short or long) To avoid clusters that make our analysis unclear, we filtered the year to be greater than 2011. 
+
+```{r, echo=FALSE}
+movies33 = movies %>%
+  drop_na() %>% 
+  filter(genre == "Action" | genre == "Comedy") %>% 
+  filter(year > 2010) %>%
+  drop_na(runtime) %>% 
+  mutate(runtime_length = case_when(
+  runtime <= 120 ~ "Short",
+  runtime > 120 ~ "Long"))
+
+
+movies_genre= movies33 %>% 
+ggplot(aes(x = genre, fill = genre)) +
+  geom_bar() +
+  xlab("Genre") +
+  ylab("Number of Movies") +
+  ggtitle("Comedy vs. Action Movies Based on Their Length", subtitle = "Years after 2010")+
+  facet_grid(cols=vars(runtime_length))
+movies_genre
+
+```
+
+Below we write code to conduct a summary of the runtime based on the genre. We group by year and find the minimum runtime, first and third quantile, and the median runtime for the movies for both genres. The table below shows a summary table for year 2011. 
+
+```{r, echo = FALSE}
+movies34 = movies33 %>% 
+  drop_na() %>% 
+  group_by(year, runtime_length, genre) %>% 
+  summarize(n = n(),
+            min = min(score),
+            q10 = quantile(score, 0.10),
+            median = median(score),
+            q90 = quantile(score, 0.90)) %>% 
+  print(n = 4)
+```
+
+To make this easier to see, we graphed the summary data in boxplots. 
+
+```{r, echo = FALSE}
+movies33 %>% 
+ggplot(aes(x = genre, y = runtime , fill = genre)) +
+  geom_boxplot(coef = Inf) +
+  xlab("Genre") +
+  ylab("Number of Movies") +
+  ggtitle("Comedy vs. Action Movies Based on Their Length",subtitle = "Years after 2010") +
+  facet_grid(cols=vars(runtime_length))
+
+
+```
+
+In the following graphical summary, we use a scatter plot to show the relationship between runtime and score and add a regression line. Although the points seem to be very clustered at around 100 minutes, we observe a positive relationship between movie runtime and score. However, we cannot conclude that as runtime gets higher so does the score. 
+
+```{r pressure, echo=FALSE}
+
+movies5 = movies33 %>% 
+  select(runtime,score) %>% 
+  drop_na()
+
+ggplot(movies33, aes(x = runtime, y = score)) +
+  geom_point() +
+  xlab("Runtime (minutes)") +
+  ylab("Score") +
+  ggtitle("Movies Runtime and Score", subtitle = "Years after 2010") +
+  geom_smooth(method="lm", se=FALSE, color="magenta")+
+  theme_bw() +
+  theme(text = element_text(size = 20))
+  
+
+```
+
+To further examine the strength and direction of the line, we calculated the correlation between the two quantitative variables and found that the correlation is approximately 0.424
+
+```{r, echo=FALSE}
+x = movies5 %>% pull(runtime)
+y = movies5 %>% pull(score)
+cor(x,y)
+```
+
+We then added two dashed lines at the average score and average runtime. 
+
+```{r, echo=FALSE}
+movies_sum = movies5 %>% 
+  summarize(mean_runtime = mean(runtime),
+            mean_score = mean(score),
+            sd_runtime = sd(runtime),
+            sd_score = sd(score),
+            n = n(),
+            r = cor(runtime, score)) %>% 
+  relocate(n)
+
+
+ggplot(movies5, aes(x = runtime, y = score)) +
+  geom_point() +
+  xlab("Runtime (min)") +
+  ylab("score") +
+  ggtitle("Movie Runtime and Score", subtitle = "Red dashed lines at variable means") +
+  geom_vline(xintercept = movies_sum$mean_runtime, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = movies_sum$mean_score, color = "red", linetype = "dashed") +
+  theme_bw() +
+  theme(text = element_text(size = 20))
+
+```
+
+All points are almost equally distributed to the left and right which supports the fact that our r isn't very strong. 
+
+
+**Discussion**
+
+Our goal is to find factors that affect the score of the movies. So far, we have analyzed how budget and score are related and have found that there is a positive relationship between the two. Then we examined the relationship between runtime and score, and found that runtime is not one of the factors that affects the success of a movie. We have yet to analyze other factors and conduct other tests for this project to come to a better conclusion as to what affects movie scores the most. 
+
+**References**
+
+^[Lecture slides: Week 8 - Week 11]
+^[https://www.kaggle.com/datasets/danielgrijalvas/movies]
+^[​​https://www.youtube.com/watch?v=I6FJo8x1wZE]
+^[https://www.youtube.com/watch?v=CToq7RVF1vI]
+^[​​https://www.youtube.com/watch?v=3av4Lk9mhzc]
+
+
+
+
+
+
